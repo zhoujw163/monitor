@@ -14,8 +14,9 @@ let onError = function (e) {
 };
 
 // 采集上报信息
-export function collect(customData, eventType) {
+export function collect(customData, eventType, isSendBeacon = false, event) {
   let appId, pageId, timestamp, ua, currentUrl;
+  let modId = "";
   beforeCreateParams && beforeCreateParams();
   // 1.采集页面的基本信息：
   //   a. 应用id（meta标签中获取app-id）
@@ -33,6 +34,10 @@ export function collect(customData, eventType) {
     return;
   }
 
+  if (event) {
+    modId = event.target.getAttribute("mod-id");
+  }
+
   // 2.日志上报信息收集
   //   a. 应用id和页面id
   //   b. 访问时间
@@ -42,9 +47,11 @@ export function collect(customData, eventType) {
   ua = window.navigator.userAgent;
   currentUrl = window.location.href;
   console.log(appId, pageId, timestamp, ua);
+
   const params = {
     appId,
     pageId,
+    modId,
     timestamp,
     ua,
     url: currentUrl,
@@ -60,7 +67,7 @@ export function collect(customData, eventType) {
   // 3.调用日志上报API
   let url, uploadData;
   try {
-    const ret = upload(data, { eventType });
+    const ret = upload(data, { eventType }, isSendBeacon);
     url = ret.url;
     uploadData = ret.data;
   } catch (e) {
@@ -76,18 +83,18 @@ export function sendPV() {
 }
 
 // 上报曝光埋点
-export function sendExp(data = {}) {
-  collect(data, "EXP");
+export function sendExp(data = {}, e) {
+  collect(data, "EXP", false, e);
 }
 
 // 上报点击埋点
-export function sendClick(data = {}) {
-  collect(data, "CLICK");
+export function sendClick(data = {}, e) {
+  collect(data, "CLICK", true, e);
 }
 
 // 上报停留时长埋点
 export function sendStayTime(data = {}) {
-  collect(data, "STAY");
+  collect(data, "STAY", true);
 }
 
 // 上报自定义埋点
@@ -97,12 +104,12 @@ export function sendCustom(data = {}) {
 
 // 上报性能指标
 export function sendPerf(data = {}) {
-  collect(data, "PERF");
+  collect(data, "PERF", true);
 }
 
 // 上报异常监控
 export function sendError(data = {}) {
-  collect(data, "ERROR");
+  collect(data, "ERROR", true);
 }
 
 export function registerBeforeCreateParams(fn) {
@@ -120,5 +127,4 @@ export function registerAfterUpload(fn) {
 export function registerOnError(fn) {
   onError = fn;
 }
-
 export default {};

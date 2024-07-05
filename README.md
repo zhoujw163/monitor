@@ -64,19 +64,50 @@
 - PV：页面浏览量，count(type = pv)
 
 - UV：用户浏览量，count(type = pv, distinct visitor_id)
+  - 数据库中增加 user_id、visitor_id
   - visitor_id 不能 null
   - 对于未登录用户，需要在客户端生成 visitor_id（uuid 持久化存储）
   - 对于已登录用户，需要获取用户的 user_id，并将 user_id 写入 visitor_id
+  - 上报的时候需要带上 user_id、visitor_id
 
 - PV点击率：页面点击率，count(type = click) / PV
   - 可以大于100%
+  - 在 SDK 中针对页面 click 事件进行监听，当触发 click 事件时自动上报
 
 - UV点击率：用户点击率，count(type = click, distinct visitor_id) / UV
   - 不可以大于100%
 
 - 停留时长：用户从打开页面到关闭页面的总时长，leave page time（beforeunonload） - open time（onload）
+  - 在 SDK 中添加自动获取用户停留时长的逻辑
+  - 处理使用 onload、beforeunonload 事件，也可以使用 visibilitychange 事件
 
-**可视化**
+```js
+
+window.addEventListener("load", function (e) {
+  window.__Monitor_ENTER_TIME = new Date().getTime();
+});
+
+window.addEventListener("beforeunload", function (e) {
+  if (window.__Monitor_ENTER_TIME) {
+    window.__Monitor_LEAVE_TIME = new Date().getTime();
+    const stayTime = window.__Monitor_LEAVE_TIME - window.__Monitor_ENTER_TIME;
+    navigator.sendBeacon(`/log?stayTime=${stayTime}`);
+  }
+});
+
+document.addEventListener("visibilitychange", function logData() {
+  if (document.visibilityState === "hidden") {
+    if (window.__Monitor_ENTER_TIME) {
+      window.__Monitor_LEAVE_TIME = new Date().getTime();
+      const stayTime = window.__Monitor_LEAVE_TIME - window.__Monitor_ENTER_TIME;
+      navigator.sendBeacon(`/log?stayTime=${stayTime}`);
+    }
+    
+  } else {
+    window.__Monitor_ENTER_TIME = new Date().getTime();
+  }
+});
+```
 
 通过折线图的方式，展示24小时内每小时页面指标
 通过表格的方式，展示一定时间段内页面的指标
@@ -84,13 +115,16 @@
 ### 模块访问行为
 
 - 模块曝光：模块显示时发送的埋点，count(type = exp, mod=mod_id)
-- 模块点击：模块被点击时发送的埋点，count(type = click, mod=mod_id)
+  - 数据库中增加 mod_id 字段，用于标识模块曝光和点击信息
+  - 在 SDK 中添加上报日志时，获取 mod_id 的逻辑
 
-**可视化**
+- 模块点击：模块被点击时发送的埋点，count(type = click, mod=mod_id)
 
 通过表格的方式，展示某个页面中所有模块的曝光和点击数据
 
 ### 页面的性能
+
+在 SDK 中添加性能采集日志，并自动完成上报
 
 - 首屏渲染时间：从打开页面到页面完全加载的时间，计算公式：
 
@@ -102,12 +136,16 @@ window.onload = function() {
 
 - API请求时间：API发起，到API响应的时间，计算公式：API响应时间 - API发起时间
 
-**可视化**
-
 折线图
 表格
 
 ### 页面异常监控
+
+- 在 SDK 中添加全局异常监控日志上报
+- 在 SDK 中添加全局promise异常监控日志上报
+- 在 SDK 中添加自定义上报 API
+- 在 SDK 中添加 API 异常上报 API
+- 在 SDK 中添加业务异常上报 API
 
 - JS Error：
   - 全局的jserror：window.onerror
@@ -141,10 +179,10 @@ window.onload = function() {
 
 https://developer.mozilla.org/zh-CN/docs/Web/API/Navigation_timing_API
 
-[](./pref.png)
-[](./pref2.png)
-[](./pref3.png)
-[](./pref4.png)
+[](./images/pref.png)
+[](./images/pref2.png)
+[](./images/pref3.png)
+[](./images/pref4.png)
 
 - [FP](https://developer.mozilla.org/zh-CN/docs/Glossary/First_paint)
 - [FCP](https://developer.mozilla.org/zh-CN/docs/Glossary/First_contentful_paint)
@@ -154,11 +192,13 @@ https://developer.mozilla.org/zh-CN/docs/Web/API/Navigation_timing_API
 
 ## 前端性能采集
 
-PerformanceTiming
+PerformanceTiming(已过时)
 
 ```js
 window.addEventListener('load', e => {
-  // PerformanceTiming 毫秒
+  // 问题：
+  // 1. 精度不足
+  // 2. 时机不准确，无法知道 load 事件什么时候结束
   const timing = window.performance.timing;
   const processingTiming = timing.domComplete - timing.domLoading;
   const dnsTiming = timing.domainLookupStart - timing.domainLookupEnd;
@@ -169,14 +209,19 @@ window.addEventListener('load', e => {
 });
 ```
 
-[获取fp、fcp、fmp（PerformancePaintTiming）](https://developer.mozilla.org/zh-CN/docs/Web/API/PerformancePaintTiming)
+[获取更多性能指标：PerformanceObserver](https://developer.mozilla.org/en-US/docs/Web/API/PerformanceObserver)
 
 ```js
-// fp
-const paint = window.performance.getEntriesByType('paint');
-const fp = paint.find(e => e.name === 'first-paint').startTime;
-const fcp = paint.find(e => e.name === 'first-contentful-paint').startTime;
-console.log(fp, fcp);
-```
+// PerformanceObserver
+function observer_callback(list, observer) {
+  list.getEntries().forEach(e => {
+    console.log(e);
+  });
+}
 
-[获取更多性能指标：PerformanceObserver](https://developer.mozilla.org/en-US/docs/Web/API/PerformanceObserver)
+let observer = new PerformanceObserver(observer_callback);
+observer.observe({ entryTypes: ['paint', 'resource', 'mark'] });
+
+// 如果想知道执行到这行代码的时间，可以添加一个 mark。在 observe 中获取 mark
+window.performance.mark('own');
+```
